@@ -18,6 +18,9 @@ std::pair<int8_t, int8_t> split_data(int16_t formatted_data) {
   int8_t second_data = formatted_data & 0xFF;
   return {first_data, second_data};
 }
+int16_t unit_data(int8_t first, int8_t second) {
+  return first << 8 | second;
+}
 class Packet{
   private:
     int id;
@@ -33,7 +36,7 @@ class Packet{
     int8_t& At(int num) {
       return buf[num];
     }
-    int Id() {
+    int& Id() {
       return id;
     }
     void Send() {
@@ -44,10 +47,12 @@ class Packet{
 };
 class RoboMasMotor{
   private:
-    int id;
+    int id = 0;
+    Packet FeedBack = Packet(0x200);
   public:
     RoboMasMotor(int set_id) {
       id = set_id;
+      FeedBack.Id() += id;
     }
     int Id() {
       return id;
@@ -60,6 +65,21 @@ class RoboMasMotor{
     std::pair<int8_t, int8_t> SendBufByte(double speed_percentage) {
       double proportion = speed_percentage / 100.0;
       return split_data(format_send_data(20 * proportion, MIN_CURRENT, MAX_CURRENT, MIN_SENDNUM, MAX_SENDNUM));
+    }
+    void SetFeedBack(Packet feedback) {
+      if(FeedBack.Id() == feedback.Id()) FeedBack = feedback;
+    }
+    int Angle() {
+      return unit_data(FeedBack.At(0), FeedBack.At(1));
+    }
+    int Rpm() {
+      return unit_data(FeedBack.At(2), FeedBack.At(3));
+    }
+    int Current() {
+      return unit_data(FeedBack.At(4), FeedBack.At(5));
+    }
+    int Temp() {
+      return FeedBack.At(6);
     }
 };
 class Omnix4 {
@@ -101,16 +121,32 @@ class Omnix4 {
       MotorSpeedChange(FrontLeftOmni, x);
       MotorSpeedChange(BackRightOmni, 0 - x);
     }
+    void SetFeedBack(Packet FeedBack) {
+      FrontLeftOmni.SetFeedBack(FeedBack);
+      BackLeftOmni.SetFeedBack(FeedBack);
+      BackLeftOmni.SetFeedBack(FeedBack);
+      FrontRightOmni.SetFeedBack(FeedBack);
+    }
 };
 
 Omnix4 TestOmni = Omnix4();
 
+void receive_callback(int packetSize) {
+  int read_count = 0;
+  Packet FeedBack = Packet(CAN.packetId());
+  if(CAN.available()) {
+    FeedBack.At(read_count);
+    read_count++;
+  }
+
+}
+
 void setup() {
   CAN.setPins(RX_PIN, TX_PIN);
   CAN.begin(1000E3);
+  CAN.onReceive(receive_callback);
 }
 
 void loop() {
-  TestOmni.Shift(50, 50, 30.0);
-  TestOmni.SendPacket();
+
 }
