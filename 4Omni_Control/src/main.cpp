@@ -8,22 +8,23 @@ const double MAX_CURRENT = 20.0;
 const int16_t MIN_SENDNUM = -16384;
 const int16_t MAX_SENDNUM = 16384;
 
+// 浮動小数点型の値を16bit整数型の値にあてはめます。
 int16_t format_send_data(double x, double in_min, double in_max, int16_t out_min, int16_t out_max) {
   double proportion = (x - in_min) / (in_max - in_min);
   double out_base = (double)(out_max - out_min);
   return out_min + out_base * proportion;
 }
+// 16bit整数型の値を8bit整数型のデータに分割しpair型で返します。
 std::pair<int8_t, int8_t> split_data(int16_t formatted_data) {
   int8_t first_data = (formatted_data >> 8) & 0xFF;
   int8_t second_data = formatted_data & 0xFF;
   return {first_data, second_data};
 }
+
+// CAN通信で送信するパケットのclassです。
 class Packet{
-  private:
-    int id;
-    int8_t buf[8];
   public:
-    Packet(int set_id) {
+    Packet(int set_id) { 
       id = set_id;
       Init();
     }
@@ -41,10 +42,12 @@ class Packet{
       for(int8_t data : buf) CAN.write(data);
       CAN.endPacket();
     }
-};
-class RoboMasMotor{
   private:
     int id;
+    int8_t buf[8];
+};
+// ロボマスモーターのclassです。
+class RoboMasMotor{
   public:
     RoboMasMotor(int set_id) {
       id = set_id;
@@ -52,34 +55,29 @@ class RoboMasMotor{
     int Id() {
       return id;
     }
+    // 自らのIDから送信パケット内でのデータの位置(2Byte分)を割り出しpair型で返します。
     std::pair<int, int> SendBufNum() {
       int first = (id - 1) * 2;
       int second = (id - 1) * 2 + 1;
       return {first, second};
     }
+    // スピードを百分率で受け取り、対応するデータ(2Byte分)を1ByteずつPair型で返します。
     std::pair<int8_t, int8_t> SendBufByte(double speed_percentage) {
       double proportion = speed_percentage / 100.0;
       return split_data(format_send_data(20 * proportion, MIN_CURRENT, MAX_CURRENT, MIN_SENDNUM, MAX_SENDNUM));
     }
-};
-class Omnix4 {
   private:
-    RoboMasMotor FrontLeftOmni = RoboMasMotor(1);
-    RoboMasMotor BackLeftOmni = RoboMasMotor(2);
-    RoboMasMotor BackRightOmni = RoboMasMotor(3);
-    RoboMasMotor FrontRightOmni = RoboMasMotor(4);
-    Packet TxBuf = Packet(0x200);
-    const double MAX_CONTROLLER_INPUT = 127.0;
-    void MotorSpeedChange(RoboMasMotor motor, int speed_percentage) {
-      TxBuf.At(motor.SendBufNum().first) = motor.SendBufByte(speed_percentage).first;
-      TxBuf.At(motor.SendBufNum().second) = motor.SendBufByte(speed_percentage).second;
-    }
+    int id;
+};
+// 4輪オムニのclassです。
+class Omnix4 {
   public:
     Omnix4() {}
-    void SendPacket() {
+    void SendPacket() { // 下記メソッドで編集されたパケットを送信します。
       TxBuf.Send();
     }
-    void Shift(int x, int y, double max_speed_percentage) { // 座標から距離を求めそれベクトルから角度を求め45度分引いてベクトルを求める
+    // コントロールスティックの座標から平行移動用にパケットを編集します。安全を鑑みて最大出力を指定してください。
+    void Shift(int x, int y, double max_speed_percentage) {
       double distans = std::sqrt(x * x + y * y);
       double radian = std::acos(x / distans);
       if(y < 0) radian = 0 - radian;
@@ -91,15 +89,22 @@ class Omnix4 {
       MotorSpeedChange(BackRightOmni, 0 - vector13);
       MotorSpeedChange(FrontRightOmni, 0 - vector24);
     }
-    void Turn(double speed_percentage) {
+    void Turn(double speed_percentage) { //±100%の範囲の値を受け取って旋回用にパケットを編集します。
       MotorSpeedChange(FrontLeftOmni, speed_percentage);
       MotorSpeedChange(BackLeftOmni, speed_percentage);
       MotorSpeedChange(BackRightOmni, speed_percentage);
       MotorSpeedChange(FrontRightOmni, speed_percentage);
     }
-    void TestMove(double x) {
-      MotorSpeedChange(FrontLeftOmni, x);
-      MotorSpeedChange(BackRightOmni, 0 - x);
+  private:
+    RoboMasMotor FrontLeftOmni = RoboMasMotor(1);
+    RoboMasMotor BackLeftOmni = RoboMasMotor(2);
+    RoboMasMotor BackRightOmni = RoboMasMotor(3);
+    RoboMasMotor FrontRightOmni = RoboMasMotor(4);
+    Packet TxBuf = Packet(0x200);
+    const double MAX_CONTROLLER_INPUT = 127.0;
+    void MotorSpeedChange(RoboMasMotor motor, int speed_percentage) {
+      TxBuf.At(motor.SendBufNum().first) = motor.SendBufByte(speed_percentage).first;
+      TxBuf.At(motor.SendBufNum().second) = motor.SendBufByte(speed_percentage).second;
     }
 };
 
@@ -111,6 +116,4 @@ void setup() {
 }
 
 void loop() {
-  TestOmni.Shift(50, 50, 30.0);
-  TestOmni.SendPacket();
 }
