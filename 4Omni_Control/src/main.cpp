@@ -134,7 +134,7 @@ Omnix4 TestOmni = Omnix4();
 void receive_callback(int packetSize) {
   int read_count = 0;
   Packet FeedBack = Packet(CAN.packetId());
-  if(CAN.available()) {
+  while(CAN.available()) {
     FeedBack.At(read_count);
     read_count++;
   }
@@ -150,3 +150,4 @@ void setup() {
 void loop() {
 
 }
+
